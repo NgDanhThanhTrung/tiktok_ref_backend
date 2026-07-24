@@ -9,7 +9,16 @@ const { sendTaskNotification } = require('../services/telegramBot');
 
 // Configure multer for memory storage
 const storage = multer.memoryStorage();
-const upload = multer({ storage });
+const upload = multer({ 
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 } // Giới hạn ảnh tối đa 10MB
+});
+
+// Helper làm sạch TikTok Username
+const sanitizeUsername = (username) => {
+  if (!username) return '';
+  return username.trim().replace(/^@+/, '').toLowerCase();
+};
 
 // Create new task with image upload
 router.post('/', upload.single('proofImage'), async (req, res) => {
@@ -22,10 +31,23 @@ router.post('/', upload.single('proofImage'), async (req, res) => {
       });
     }
 
+    const cleanWorker = sanitizeUsername(workerUsername);
+
     // Verify link exists and is active
     const link = await Link.findById(linkId);
     if (!link || link.status !== 'ACTIVE') {
       return res.status(404).json({ error: 'Link not found or not active' });
+    }
+
+    // Kiểm tra xem worker đã nộp task đang PENDING cho link này chưa (chống spam)
+    const existingPendingTask = await Task.findOne({
+      linkId,
+      workerUsername: cleanWorker,
+      status: 'PENDING'
+    });
+
+    if (existingPendingTask) {
+      return res.status(400).json({ error: 'You already submitted a proof for this link. Please wait for review.' });
     }
 
     // Upload to Cloudinary
@@ -45,7 +67,7 @@ router.post('/', upload.single('proofImage'), async (req, res) => {
     // Create task
     const task = new Task({
       linkId,
-      workerUsername: workerUsername.toLowerCase(),
+      workerUsername: cleanWorker,
       proofImageUrl: result.secure_url,
       status: 'PENDING'
     });
@@ -59,12 +81,16 @@ router.post('/', upload.single('proofImage'), async (req, res) => {
 
     // Send Telegram notification if owner has chat ID
     if (owner && owner.telegramChatId) {
-      await sendTaskNotification(
-        owner.telegramChatId,
-        task,
-        link,
-        workerUsername
-      );
+      try {
+        await sendTaskNotification(
+          owner.telegramChatId,
+          task,
+          link,
+          cleanWorker
+        );
+      } catch (tgError) {
+        console.error('Lỗi khi gửi thông báo Telegram:', tgError);
+      }
     }
 
     res.status(201).json(task);
@@ -77,8 +103,9 @@ router.post('/', upload.single('proofImage'), async (req, res) => {
 // Get tasks by worker
 router.get('/worker/:username', async (req, res) => {
   try {
+    const cleanUsername = sanitizeUsername(req.params.username);
     const tasks = await Task.find({ 
-      workerUsername: req.params.username.toLowerCase() 
+      workerUsername: cleanUsername 
     })
     .populate('linkId')
     .sort({ createdAt: -1 });
@@ -93,9 +120,11 @@ router.get('/worker/:username', async (req, res) => {
 // Get tasks by link owner
 router.get('/owner/:username', async (req, res) => {
   try {
+    const cleanUsername = sanitizeUsername(req.params.username);
+    
     // Get all links owned by this user
     const links = await Link.find({ 
-      ownerUsername: req.params.username.toLowerCase() 
+      ownerUsername: cleanUsername 
     });
     
     const linkIds = links.map(link => link._id);
@@ -132,7 +161,7 @@ router.patch('/:id/status', async (req, res) => {
     }
 
     task.status = status;
-    task.reviewedAt = Date.now();
+    task.reviewedAt = new Date();
     await task.save();
 
     // Update credits if approved
