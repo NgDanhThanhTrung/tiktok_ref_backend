@@ -3,6 +3,12 @@ const router = express.Router();
 const Link = require('../models/Link');
 const User = require('../models/User');
 
+// Helper làm sạch TikTok Username
+const sanitizeUsername = (username) => {
+  if (!username) return '';
+  return username.trim().replace(/^@+/, '').toLowerCase();
+};
+
 // Get all active links
 router.get('/', async (req, res) => {
   try {
@@ -19,8 +25,9 @@ router.get('/', async (req, res) => {
 // Get links by owner
 router.get('/owner/:username', async (req, res) => {
   try {
+    const cleanUsername = sanitizeUsername(req.params.username);
     const links = await Link.find({ 
-      ownerUsername: req.params.username.toLowerCase() 
+      ownerUsername: cleanUsername 
     }).sort({ createdAt: -1 });
     
     res.json(links);
@@ -39,9 +46,11 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'URL and ownerUsername are required' });
     }
 
+    const cleanOwner = sanitizeUsername(ownerUsername);
+
     // Verify user exists
     const user = await User.findOne({ 
-      tiktokUsername: ownerUsername.toLowerCase() 
+      tiktokUsername: cleanOwner 
     });
 
     if (!user) {
@@ -49,8 +58,8 @@ router.post('/', async (req, res) => {
     }
 
     const link = new Link({
-      url,
-      ownerUsername: ownerUsername.toLowerCase(),
+      url: url.trim(),
+      ownerUsername: cleanOwner,
       targetCount: targetCount || 10,
       rewardPoints: rewardPoints || 5,
       status: 'ACTIVE'
@@ -68,7 +77,12 @@ router.post('/', async (req, res) => {
 router.patch('/:id/status', async (req, res) => {
   try {
     const { status } = req.body;
-    
+    const allowedStatuses = ['ACTIVE', 'COMPLETED', 'PAUSED'];
+
+    if (!status || !allowedStatuses.includes(status)) {
+      return res.status(400).json({ error: 'Invalid status value. Must be ACTIVE, COMPLETED, or PAUSED' });
+    }
+
     const link = await Link.findByIdAndUpdate(
       req.params.id,
       { status },
