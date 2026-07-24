@@ -3,7 +3,8 @@ const mongoose = require('mongoose');
 const linkSchema = new mongoose.Schema({
   url: {
     type: String,
-    required: true
+    required: true,
+    trim: true
   },
   ownerUsername: {
     type: String,
@@ -29,20 +30,9 @@ const linkSchema = new mongoose.Schema({
     type: String,
     enum: ['ACTIVE', 'COMPLETED', 'PAUSED'],
     default: 'ACTIVE'
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
   }
-});
-
-linkSchema.pre('save', function(next) {
-  this.updatedAt = Date.now();
-  next();
+}, { 
+  timestamps: true // Mongoose sẽ tự quản lý createdAt & updatedAt cho bạn
 });
 
 module.exports = mongoose.model('Link', linkSchema);
