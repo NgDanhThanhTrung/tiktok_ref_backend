@@ -3,40 +3,53 @@ const Task = require('../models/Task');
 const Link = require('../models/Link');
 const User = require('../models/User');
 
+// Helper làm sạch TikTok Username
+const sanitizeUsername = (username) => {
+  if (!username) return '';
+  return username.trim().replace(/^@+/, '').toLowerCase();
+};
+
 // Auto-approve tasks after 24 hours if still pending
 function startAutoApproveScheduler() {
-  // Run every hour
+  // Chạy định kỳ vào phút đầu tiên của mỗi giờ ('0 * * * *')
   cron.schedule('0 * * * *', async () => {
-    console.log('Running auto-approve check...');
+    console.log('⏰ [Cronjob] Đang kiểm tra nhiệm vụ quá hạn 24 giờ...');
     
     try {
       const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
       
-      // Find pending tasks older than 24 hours
+      // Tìm các task PENDING được tạo từ 24 tiếng trước trở về trước
       const pendingTasks = await Task.find({
         status: 'PENDING',
         createdAt: { $lt: twentyFourHoursAgo }
       }).populate('linkId');
 
-      console.log(`Found ${pendingTasks.length} tasks to auto-approve`);
+      if (pendingTasks.length === 0) {
+        console.log('✅ [Cronjob] Không có nhiệm vụ nào cần tự động duyệt.');
+        return;
+      }
+
+      console.log(`🔍 [Cronjob] Phát hiện ${pendingTasks.length} nhiệm vụ cần auto-approve.`);
 
       for (const task of pendingTasks) {
         try {
           task.status = 'APPROVED';
-          task.reviewedAt = Date.now();
+          task.reviewedAt = new Date();
           task.autoApproved = true;
           await task.save();
 
-          // Update worker credits
+          const cleanWorker = sanitizeUsername(task.workerUsername);
+
+          // Cập nhật điểm thưởng cho Worker
           const worker = await User.findOne({ 
-            tiktokUsername: task.workerUsername 
+            tiktokUsername: cleanWorker 
           });
           
           if (worker && task.linkId) {
-            worker.credits += task.linkId.rewardPoints;
+            worker.credits += task.linkId.rewardPoints || 5;
             await worker.save();
 
-            // Update link completed count
+            // Cập nhật số lượt đã hoàn thành của Link
             task.linkId.completedCount += 1;
             if (task.linkId.completedCount >= task.linkId.targetCount) {
               task.linkId.status = 'COMPLETED';
@@ -44,19 +57,19 @@ function startAutoApproveScheduler() {
             await task.linkId.save();
           }
 
-          console.log(`Auto-approved task ${task._id}`);
+          console.log(`🎉 [Cronjob] Đã tự động duyệt Task ID: ${task._id} cho user @${cleanWorker}`);
         } catch (error) {
-          console.error(`Error auto-approving task ${task._id}:`, error);
+          console.error(`❌ [Cronjob] Lỗi khi duyệt Task ID ${task._id}:`, error);
         }
       }
 
-      console.log('Auto-approve check completed');
+      console.log('✅ [Cronjob] Hoàn tất tiến trình tự động duyệt.');
     } catch (error) {
-      console.error('Error in auto-approve scheduler:', error);
+      console.error('❌ [Cronjob] Lỗi hệ thống trong Auto-approve scheduler:', error);
     }
   });
 
-  console.log('Auto-approve scheduler started (runs every hour)');
+  console.log('🚀 Auto-approve scheduler đã khởi tạo (chạy kiểm tra mỗi giờ một lần).');
 }
 
 module.exports = { startAutoApproveScheduler };
