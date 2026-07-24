@@ -21,10 +21,6 @@ const taskSchema = new mongoose.Schema({
     enum: ['PENDING', 'APPROVED', 'REJECTED', 'DISPUTED'],
     default: 'PENDING'
   },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
   reviewedAt: {
     type: Date,
     default: null
@@ -33,9 +29,11 @@ const taskSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   }
+}, { 
+  timestamps: true // Tự động tạo và quản lý trường createdAt và updatedAt
 });
 
-// Index for auto-approval queries
+// Index tối ưu truy vấn cho cron job auto-approve bài chờ sau 24h
 taskSchema.index({ status: 1, createdAt: 1 });
 
 module.exports = mongoose.model('Task', taskSchema);
