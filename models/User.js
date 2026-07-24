@@ -21,20 +21,9 @@ const userSchema = new mongoose.Schema({
     default: 100,
     min: 0,
     max: 100
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
   }
-});
-
-userSchema.pre('save', function(next) {
-  this.updatedAt = Date.now();
-  next();
+}, { 
+  timestamps: true // Tự động tạo và cập nhật createdAt, updatedAt
 });
 
 module.exports = mongoose.model('User', userSchema);
